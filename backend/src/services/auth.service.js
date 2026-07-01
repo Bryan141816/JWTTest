@@ -5,9 +5,10 @@ import {
   findUserByEmail,
   findUserById
 } from "../repositories/user.repository.js";
-import { createRefreshToken, findRefreshTokenyUserId, revokeRefreshToken } from "../repositories/refresh_token.repository.js";
+import { createRefreshToken, findRefreshTokenByHash, revokeRefreshToken } from "../repositories/refresh_token.repository.js";
 import { textToHash, compareHash } from "../utils/hash.js";
-import { generateAccessToken, generateRefreshToken, verifyRefreshToken } from "../utils/jwt.js";
+import { generateAccessToken } from "../utils/jwt.js";
+import { generateRefreshToken, hashRefreshToken } from "../utils/refresh_token.js";
 export async function signup(data) {
   const existing = await findUserByEmail(data.email);
 
@@ -50,13 +51,12 @@ export async function login(data) {
 
   const accessToken = generateAccessToken(user);
 
-  const refreshToken = generateRefreshToken(user);
-
-  const refreshHash = await textToHash(refreshToken);
-
+  const refreshToken = await generateRefreshToken();
+  const refreshHash = await hashRefreshToken(refreshToken);
   await createRefreshToken({
     userId: user.id,
     hash: refreshHash,
+    expiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000), 
   });
 
   return {
@@ -71,44 +71,23 @@ export async function login(data) {
 }
 
 export async function refresh(data) {
-  const verified = verifyRefreshToken(data);
-  const refreshTokenHashes = await findRefreshTokenyUserId(verified.id);
-  if (refreshTokenHashes.length == 0) {
-    throw new Error("Refresh token isn't valid");
-  }
-  let currentToken = null;
-  for (const token of refreshTokenHashes) {
-    console.log(data, token.hash, await compareHash(
 
-      data,
-      token.hash
-    ));
-    const matches = await compareHash(
-
-      data,
-      token.hash
-    );
-
-    if (matches) {
-      currentToken = token;
-      break;
-    }
-  }
+  const hashedToken = await hashRefreshToken(data);
+  const currentToken = await findRefreshTokenByHash(hashedToken);
   if (!currentToken) {
     throw new Error("No matching token");
   }
   const isRevoked = await revokeRefreshToken(currentToken.id);
-  const user = await findUserById(verified.id);
+  const user = await findUserById(currentToken.user_id);
 
-  const accessToken = generateAccessToken(user);
+  const accessToken = await generateAccessToken(user);
 
-  const refreshToken = generateRefreshToken(user);
-  console.log(refreshToken)
-  const refreshHash = await textToHash(refreshToken);
-  console.log(refreshHash);
+  const refreshToken = await generateRefreshToken();
+  const refreshHash = await hashRefreshToken(refreshToken);
   await createRefreshToken({
     userId: user.id,
     hash: refreshHash,
+    expiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000), 
   });
 
   return {

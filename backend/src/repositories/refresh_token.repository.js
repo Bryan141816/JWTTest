@@ -1,36 +1,58 @@
 import pool from "../config/database.js";
 
-export async function createRefreshToken({ userId, hash }) {
+export async function createRefreshToken({
+  userId,
+  hash,
+  expiresAt,
+}) {
   const [result] = await pool.execute(
     `
     INSERT INTO refresh_tokens
     (
-        user_id,
-        hash,
-        revoked,
-        created_at,
-        revoked_at
+      user_id,
+      hash,
+      revoked,
+      created_at,
+      expires_at,
+      revoked_at
     )
-    VALUES (?, ?, FALSE, NOW(), NULL)
+    VALUES
+    (
+      ?,
+      ?,
+      FALSE,
+      NOW(),
+      ?,
+      NULL
+    )
     `,
-    [userId, hash]
+    [userId, hash, expiresAt]
   );
 
   return result.insertId;
 }
 
-export async function findRefreshTokenyUserId(userId) {
+export async function findRefreshTokenByHash(hash) {
   const [rows] = await pool.execute(
     `
-    SELECT id, hash
+    SELECT
+      id,
+      user_id,
+      hash,
+      revoked,
+      created_at,
+      expires_at,
+      revoked_at
     FROM refresh_tokens
-    WHERE user_id = ?
-      AND revoked = FALSE
+    WHERE
+      hash = ?
+      AND expires_at > NOW()
+    LIMIT 1
     `,
-    [userId]
+    [hash]
   );
 
-  return rows;
+  return rows[0] ?? null;
 }
 
 export async function revokeRefreshToken(id) {
